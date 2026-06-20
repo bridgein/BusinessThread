@@ -29,7 +29,7 @@ import feedparser
 # 配置区：信源 / 模型 / 阈值，随时改这里
 # ----------------------------------------------------------------------------
 
-MODEL = "claude-sonnet-4-6"          # 筛选用模型，便宜可换 claude-haiku-4-5-20251001
+MODEL = "claude-haiku-4-5-20251001"  # 筛选用模型，高品质は claude-sonnet-4-6
 MAX_PICKS = 8                        # 每期最多几条
 LOOKBACK_HOURS = 30                  # 只看最近多少小时的内容
 MAX_RAW_ITEMS = 60                   # 喂给 Claude 的原始条目上限（控制 token）
