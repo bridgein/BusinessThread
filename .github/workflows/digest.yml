@@ -36,19 +36,9 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # digest.py が書いた seen.json を退避してから pull し、マージして push
           cp seen.json /tmp/seen_current.json
           git pull --rebase origin main
-          python3 - <<'EOF'
-import json
-with open("seen.json") as f:
-    remote_ids = set(json.load(f).get("ids", []))
-with open("/tmp/seen_current.json") as f:
-    current_ids = set(json.load(f).get("ids", []))
-merged = list(remote_ids | current_ids)[-2000:]
-with open("seen.json", "w") as f:
-    json.dump({"ids": merged}, f, ensure_ascii=False, indent=0)
-EOF
+          python3 merge_seen.py
           git add seen.json
           git diff --cached --quiet || git commit -m "chore: update seen.json [skip ci]"
           git push origin main
