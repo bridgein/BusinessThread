@@ -65,25 +65,34 @@ HEADERS = {"User-Agent": UA}
 
 # 给 Claude 的筛选标准——这里就是这个 agent 的"判断力"，按需要调
 _focus_line = f"\n方向聚焦：{FOCUS}\n" if FOCUS.strip() else "\n"
-FILTER_BRIEF = """你是一名产品机会侦察兵，专门为独立开发者寻找「有收入增长或用户增长信号」的产品机会。
+FILTER_BRIEF = """あなたはインディー開発者向けにプロダクト機会を発掘する調査員です。
+以下の基準で条目を選別し、最大 %d 件を選んでください。%s
+【選別基準（優先順位順）】
 
-【唯一选取标准】条目中必须包含以下任一具体信号，才可入选：
-- 收入信号：提到 MRR / ARR / 付费用户数 / 定价 / 收入金额（如 $500 MRR、100 paying users）
-- 用户增长信号：提到用户数增长、DAU/MAU、增长率、waitlist 人数等具体数字
-- 市场需求信号：明确的付费意愿（用户在评论中说愿意付费）或竞品的收入数据%s
-没有上述任一信号的条目，无论话题多热门，一律不选。
+▶ 優先：定量シグナルがあれば必ず選ぶ
+  - 収入シグナル：MRR / ARR / 有料ユーザー数 / 価格設定 / 収入金額の言及
+  - 成長シグナル：ユーザー数・DAU/MAU・成長率・waitlist人数などの具体的な数字
 
-为每个入选项填写以下字段：
-- why: 具体说明该条目包含哪个信号、数字是多少（一句中文，必须引用原文数字）
-- solo_reason: 为什么一个人可以实现（技术复杂度、运营负担、有无现成 API 等）
-- signal: 原文中的客观数字（直接引用，如「MRR $2k」「3,000 waitlist」「HN 412点」）
+▶ 次点：定量シグナルがなくても以下があれば選ぶ
+  - 具体的なB2B課題（対象顧客と痛みが明確、かつ現在の代替手段が高コストまたは非効率）
+  - 有料競合が存在し、そこから乗り換えたいユーザーの声や比較言及
+  - 開発者ツール・業務自動化で、既存ツールの明確な欠点を補う
 
-按信号の強さ（収入 > ユーザー数 > 市場需要）で降順に並べ、最大 %d 件。
-信号が弱い場合でも、条件を満たすものは積極的に選ぶこと。
+▶ 除外：純粋なSNS・双方向マーケット・UGCスケール依存・個人がコールドスタートできないもの
 
-只返回 JSON，格式严格如下，不要任何解释或 markdown 代码块：
-{"picks": [{"title": "...", "url": "...", "why": "一句中文", "solo_reason": "一句中文", "signal": "...", "source": "..."}]}
-""" % (_focus_line, MAX_PICKS)
+各入選項について以下のフィールドを日本語で記入してください：
+- product_type: 製品カテゴリ（例：B2B SaaS / 開発者ツール / 業務効率化 / AI ツール）
+- target_user: ターゲットユーザー（例：中小企業のエンジニア / フリーランサー）
+- revenue_model: 収益モデル（例：月額サブスク / 従量課金 / 買い切り / 未明記）
+- why: この機会が注目に値する理由（市場の痛み・競合状況・タイミングを含む2〜3文）
+- signal: 条目内の客観的データ（数字があれば引用、なければ「定性：〇〇」と記述）
+- solo_reason: なぜ一人で実現できるか（技術スタック・運営負担・既存APIの有無など）
+
+シグナルの強さ（収入 > ユーザー数 > 定性）で降順に並べること。
+
+JSONのみ返すこと。説明やmarkdownコードブロックは不要：
+{"picks": [{"title": "...", "url": "...", "product_type": "...", "target_user": "...", "revenue_model": "...", "why": "...", "signal": "...", "solo_reason": "...", "source": "..."}]}
+""" % (MAX_PICKS, _focus_line)
 
 
 # ----------------------------------------------------------------------------
@@ -232,7 +241,7 @@ def rank_with_claude(items):
         },
         json={
             "model": MODEL,
-            "max_tokens": 2000,
+            "max_tokens": 4000,
             "messages": [{"role": "user", "content": user_msg}],
         },
         timeout=120,
@@ -266,33 +275,41 @@ def render_html(picks_by_source):
             continue
         rows = []
         for i, p in enumerate(picks, 1):
-            title = html.escape(p.get("title", "(无标题)"))
-            url = html.escape(p.get("url", "#"))
-            why = html.escape(p.get("why", ""))
-            solo_reason = html.escape(p.get("solo_reason", ""))
-            signal = html.escape(p.get("signal", ""))
-            signal_html = (f'<div style="margin-top:4px;font-size:12px;color:#9a9a9a;">📊 {signal}</div>'
-                           if signal and signal != "无公开数据" else "")
+            title        = html.escape(p.get("title", ""))
+            url          = html.escape(p.get("url", "#"))
+            product_type = html.escape(p.get("product_type", ""))
+            target_user  = html.escape(p.get("target_user", ""))
+            revenue_model= html.escape(p.get("revenue_model", ""))
+            why          = html.escape(p.get("why", ""))
+            signal       = html.escape(p.get("signal", ""))
+            solo_reason  = html.escape(p.get("solo_reason", ""))
+
+            meta_parts = [x for x in [product_type, target_user, revenue_model] if x]
+            meta_html = (f'<div style="margin-top:4px;font-size:12px;color:#777;">'
+                         + " ｜ ".join(meta_parts) + "</div>") if meta_parts else ""
+            signal_html = (f'<div style="margin-top:5px;font-size:12px;color:#9a9a9a;">📊 {signal}</div>'
+                           if signal else "")
             rows.append(f"""
-            <div style="margin:0 0 18px;padding:0 0 14px;border-bottom:1px solid #ececec;">
-              <div style="font-size:13px;color:#9a9a9a;">#{i}</div>
-              <a href="{url}" style="font-size:17px;font-weight:600;color:#111;text-decoration:none;line-height:1.4;">{title}</a>
+            <div style="margin:0 0 22px;padding:0 0 18px;border-bottom:1px solid #ececec;">
+              <div style="font-size:12px;color:#aaa;margin-bottom:3px;">#{i}</div>
+              <a href="{url}" style="font-size:16px;font-weight:700;color:#111;text-decoration:none;line-height:1.4;">{title}</a>
+              {meta_html}
               {signal_html}
-              <div style="margin-top:6px;font-size:15px;color:#444;line-height:1.6;">{why}</div>
-              <div style="margin-top:4px;font-size:13px;color:#666;">👤 {solo_reason}</div>
+              <div style="margin-top:8px;font-size:14px;color:#333;line-height:1.7;">{why}</div>
+              <div style="margin-top:6px;font-size:13px;color:#666;line-height:1.6;">👤 {solo_reason}</div>
             </div>""")
         sections.append(f"""
-        <div style="margin:0 0 30px;">
-          <div style="font-size:13px;font-weight:700;color:#fff;background:#333;padding:4px 10px;border-radius:4px;display:inline-block;margin-bottom:14px;">{html.escape(source_label)}</div>
+        <div style="margin:0 0 32px;">
+          <div style="font-size:12px;font-weight:700;color:#fff;background:#444;padding:3px 10px;border-radius:3px;display:inline-block;margin-bottom:16px;">{html.escape(source_label)}</div>
           {"".join(rows)}
         </div>""")
     body = "".join(sections)
-    return f"""<!DOCTYPE html><html><body style="margin:0;background:#f6f6f4;">
-      <div style="max-width:600px;margin:0 auto;padding:28px 22px;font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;">
-        <h1 style="font-size:20px;margin:0 0 4px;color:#111;">独立开发者机会小报</h1>
-        <div style="font-size:13px;color:#9a9a9a;margin-bottom:24px;">{today} · 共 {total} 条</div>
+    return f"""<!DOCTYPE html><html><body style="margin:0;background:#f5f5f3;">
+      <div style="max-width:640px;margin:0 auto;padding:32px 24px;font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;">
+        <h1 style="font-size:18px;margin:0 0 4px;color:#111;font-weight:800;">インディー開発者向け機会レポート</h1>
+        <div style="font-size:12px;color:#aaa;margin-bottom:28px;">{today} · {total}件 ｜ Product Hunt / Hacker News / Reddit</div>
         {body}
-        <div style="font-size:12px;color:#b5b5b5;margin-top:20px;">由 Claude 从 Product Hunt / Hacker News / Reddit 筛选。改信源和筛选标准请编辑 digest.py。</div>
+        <div style="font-size:11px;color:#bbb;margin-top:24px;border-top:1px solid #e5e5e5;padding-top:16px;">Claude により自動収集・選別。基準変更は digest.py を編集。</div>
       </div></body></html>"""
 
 
