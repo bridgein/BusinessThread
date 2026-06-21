@@ -32,13 +32,3 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: python digest.py
 
-      - name: Commit seen.json
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp seen.json /tmp/seen_current.json
-          git pull --rebase origin main
-          python3 merge_seen.py
-          git add seen.json
-          git diff --cached --quiet || git commit -m "chore: update seen.json [skip ci]"
-          git push origin main
